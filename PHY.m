@@ -1,5 +1,6 @@
 %% PDSCH (Physical Downlink Shared Channel) modo TM1
-% Utilizaremos la paqueteria LTEToolBox 
+% Utilizaremos la paqueteria LTEToolBox y funciones del ejemplo de Matlab 
+% 'lte/PDSCHThroughputConformanceExample'
 % Se calcula el rendimiento del canal y la Pb para diversos valores de SNR 
 % por medio de la simulacion de la transimision de subtramas. 
 % Para cada valor de SNR considerado, un malla fuente es generada y 
