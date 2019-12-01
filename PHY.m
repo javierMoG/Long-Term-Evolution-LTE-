@@ -1,314 +1,209 @@
-%% PDSCH modo TM1
+%% PDSCH (Physical Downlink Shared Channel) modo TM1
+% Utilizaremos la paqueteria LTEToolBox 
+% Se calcula el rendimiento del canal y la Pb para diversos valores de SNR 
+% por medio de la simulacion de la transimision de subtramas. 
+% Para cada valor de SNR considerado, un malla fuente es generada y 
+% modulada con OFDM para crear la onda de transmision. La onda generada se 
+% pasa a traves de un canal de desvanecimiento ruidoso.
+% En el receptor se realiza la estimacion del canal, la equalizacion, la
+% demodulacion y la decodificacion. El rendimiento del canal del PSDCH se
+% determina usando el resultado del bloque de CRC a la salida del
+% decodificador del canal.
 
-%% Introduccion
-% Se calcula el rendimiento del canal para diversos valores de SNR por medio
-% de la simulación de la transimision de subtramas. For each of the
-% considered SNR points a populated resource grid is generated and OFDM
-% modulated to create a transmit waveform. The generated waveform is passed
-% through a noisy fading channel. The following operations are then
-% performed by the receiver: channel estimation, equalization, demodulation
-% and decoding. The throughput performance of the PDSCH is determined using
-% the block CRC result at the output of the channel decoder.
+%% Transmisor
+NFrames = 2;%Numero de tramas generadas
+SNRIn = [8:13];% rango del SNR en dB
 
-%% Simulation Configuration
-% The example is executed for a simulation length of 2 frames for a number
-% of SNR points. A large number of |NFrames| should be used to produce
-% meaningful throughput results. |SNRIn| can be an array of values or a
-% scalar. 
+% Por simplicidad se utilizó un ancho de bando de 50 bloques fuente (9MHz)
+% con asignacion completa y una tasa de codigo de 0.5.
+% No se implementa el formato de decodificacion DCI 
 
-NFrames = 2;                % Number of frames
-SNRIn = [0 5 10 15];   % SNR range in dB
-
-
-
-%% 
-% For simplicity all TMs modeled in this example have a bandwidth of 50
-% resource blocks with a full allocation and a code rate of 0.5. Not
-% specifying an RMC number ensures that all downlink subframes are
-% scheduled. If RMC is specified (e.g. 'R.0'), the subframe scheduling is
-% as defined in TS 36.101 [ <#19 1> ] where subframe 5 is not scheduled in
-% most cases.
-% This example does not perform DCI
-% format decoding, so the |DCIFormat| field is not strictly necessary.
-% However, since the DCI format is closely linked to the TM, it is
-% included for completeness.
-
-simulationParameters = []; % clear simulationParameters   
-simulationParameters.NDLRB = 50;        
-simulationParameters.PDSCH.TargetCodeRate = 0.5;
-simulationParameters.PDSCH.PRBSet = (0:49)';
+simulationParameters = []; %Inicializamos los parametros de la simulacion   
+simulationParameters.NDLRB = 50; %Ancho de banda (bloques fuente)        
+simulationParameters.PDSCH.TargetCodeRate = 0.5; %Tasa de codigo
+simulationParameters.PDSCH.PRBSet = (0:49)'; %Indices del PRB para cada 
+%ranura de la trama
 
 
 fprintf('\nTM1 - Single antenna (port 0)\n');
 simulationParameters.PDSCH.TxScheme = 'Port0';
-simulationParameters.PDSCH.DCIFormat = 'Format1';
-simulationParameters.CellRefP = 1;
+simulationParameters.PDSCH.DCIFormat = 'Format1'; %Se llena aunque no se 
+%utilice para poder correr la simulacion
+simulationParameters.CellRefP = 1; %numero de puertos de antena de señal
+%específicos de celda
 simulationParameters.PDSCH.Modulation = {'16QAM'};
+simulationParameters.TotSubframes = 1; % Generar una subtrama a la vez
+simulationParameters.PDSCH.CSI = 'On'; % Los bits suaves son pesados por 
+% el CSI (Channel Status Information) 
 
-% Set other simulationParameters fields applying to all TMs
-simulationParameters.TotSubframes = 1; % Generate one subframe at a time
-simulationParameters.PDSCH.CSI = 'On'; % Soft bits are weighted by CSI
+enb = lteRMCDL(simulationParameters); %configuramos la antena de lte
 
-%%
-% Call <matlab:doc('lteRMCDL') lteRMCDL> to generate the default eNodeB
-% parameters not specified in |simulationParameters|. These will be
-% required later to generate the waveform using <matlab:doc('lteRMCDLTool')
-% lteRMCDLTool>.
+rvSequence = enb.PDSCH.RVSeq; %Secuencia de version de redundancia 
+trBlkSizes = enb.PDSCH.TrBlkSizes; %Guardamos el tamaño de los bloques de 
+% transporte
 
-enb = lteRMCDL(simulationParameters);
+ncw = length(string(enb.PDSCH.Modulation)); %numero de palabras de código
+% (codewords)
 
-%%
-% The output |enb| structure contains, amongst other fields, the transport
-% block sizes and redundancy version sequence for each codeword subframe
-% within a frame. These will be used later in the simulation.
-
-rvSequence = enb.PDSCH.RVSeq;
-trBlkSizes = enb.PDSCH.TrBlkSizes;
-
-%%
-% The number of codewords, |ncw|, is the number of entries in the
-% |enb.PDSCH.Modulation| field.
-ncw = length(string(enb.PDSCH.Modulation));
-
-
-
-%%
-% Next we print a summary of some of the more relevant simulation
-% parameters. Check these values to make sure they are as expected. The
-% code rate displayed can be useful to detect problems if manually
-% specifying the transport block sizes. Typical values are 1/3, 1/2 and
-% 3/4.
-
+%Desplegamos los parametros configurados para la simulacion
 hDisplayENBParameterSummary(enb, 'TM1');
 
-%% Propagation Channel Model Configuration
-% The structure |channel| contains the channel model configuration
-% parameters.
+%% Configuracion del canal de propagacion
 
-channel.Seed = 6;                    % Channel seed
-channel.NRxAnts = 1;                 % 2 receive antennas
-channel.DelayProfile = 'EPA';        % Delay profile
-channel.DopplerFreq = 5;             % Doppler frequency
-channel.MIMOCorrelation = 'Low';     % Multi-antenna correlation
-channel.NTerms = 16;                 % Oscillators used in fading model
-channel.ModelType = 'GMEDS';         % Rayleigh fading model type
-channel.InitPhase = 'Random';        % Random initial phases
-channel.NormalizePathGains = 'On';   % Normalize delay profile power  
-channel.NormalizeTxAnts = 'On';      % Normalize for transmit antennas
+channel.Seed = 6;                    % Generador de numeros aleatorios
+channel.NRxAnts = 1;                 % Una antena receptora
+channel.DelayProfile = 'EPA';        % Perfil del retardo
+channel.DopplerFreq = 5;             % Frecuencia Doppler
+channel.MIMOCorrelation = 'Low';     % Correlacion de la antena y el UE
+channel.NTerms = 16;                 % Numero de osiladores usados en el 
+% fading 
+channel.ModelType = 'GMEDS';         % Modelo de Rayleigh fading 
+channel.InitPhase = 'Random';        % Fases iniciales aleatorias
+channel.NormalizePathGains = 'On';   % Normalizamos la potencia del perfil 
+% del retardo  
+channel.NormalizeTxAnts = 'On';      % Normalizamos para antenas de 
+% transmision
 
-% The sampling rate for the channel model is set using the value returned
-% from <matlab:doc('lteOFDMInfo') lteOFDMInfo>.
+ofdmInfo = lteOFDMInfo(enb);         %Fijamos los parametros de la 
+% modulacion OFDM
+channel.SamplingRate = ofdmInfo.SamplingRate; %Fijamos la tasa de muestreo
 
-ofdmInfo = lteOFDMInfo(enb);
-channel.SamplingRate = ofdmInfo.SamplingRate;
+%% Configuracion del Estimador del Canal
 
-%% Channel Estimator Configuration
-% The variable |perfectChanEstimator| controls channel estimator behavior.
-% Valid values are |true| or |false|. When set to |true| a perfect channel
-% response is used as estimate, otherwise an imperfect estimation based on
-% the values of received pilot signals is obtained.
-
-% Perfect channel estimator flag
-perfectChanEstimator = false;
-
-%%
-% If |perfectChanEstimator| is set to false a configuration structure |cec|
-% is needed to parameterize the channel estimator. The channel changes
-% slowly in time and frequency, therefore a large averaging window is used
-% in order to average the noise out.
-
-% Configure channel estimator
-cec.PilotAverage = 'UserDefined';   % Type of pilot symbol averaging
-cec.FreqWindow = 41;                % Frequency window size in REs
-cec.TimeWindow = 27;                % Time window size in REs
-cec.InterpType = 'Cubic';           % 2D interpolation type
-cec.InterpWindow = 'Centered';      % Interpolation window type
-cec.InterpWinSize = 1;              % Interpolation window size
-
-%% Display Simulation Information
-% The variable |displaySimulationInformation| controls the display of
-% simulation information such as the HARQ process ID used for each
-% subframe. In case of CRC error the value of the index to the RV sequence
-% is also displayed.
-
+perfectChanEstimator = false; %Utilizamos un canal imperfecto
+%El canal cambia lentamente en tiempo y frecuencia
+%Parametros del estimador del canal
+cec.PilotAverage = 'UserDefined';   % Establecemos el modo manual de 
+% definicion de la ventana para leer los simbolos de referencia
+cec.FreqWindow = 41;                % Tamaño de la ventana en frecuencia
+cec.TimeWindow = 27;                % Tamaño de la ventana en tiempo
+cec.InterpType = 'Cubic';           % Tipo de interpolacion usada con los 
+%simbolos de referencia
+cec.InterpWindow = 'Centered';      % Tipo de ventana de interpolacion 
+cec.InterpWinSize = 1;              % Tamaño de la ventana de interpolacion
+%Lo anterior se configura para reducir el efecto del ruido
+%Para poder desplegar informacion de la transmision durante la simulacion
 displaySimulationInformation = true;
+%% Ciclo de procesamiento
+% Para obtener el rendimiento y la Pb en cada valor de SNR, la informacion
+% del PDSCH es analizada subtrama por subtrama 
 
-%% Processing Loop
-% To determine the throughput at each SNR point, the PDSCH data is analyzed
-% on a subframe by subframe basis using the following steps:
-%
-% * _Update Current HARQ Process._ The HARQ process either carries new
-% transport data or a retransmission of previously sent transport data
-% depending upon the Acknowledgment (ACK) or Negative Acknowledgment (NACK)
-% based on CRC results. All this is handled by the HARQ scheduler,
-% <matlab:edit('hHARQScheduling.m') hHARQScheduling.m>. The PDSCH data is
-% updated based on the HARQ state.
-%
-% * _Create Transmit Waveform._ The data generated by the HARQ process is
-% passed to <matlab:doc('lteRMCDLTool') lteRMCDLTool> which produces an
-% OFDM modulated waveform, containing the physical channels and signals.
-%
-% * _Noisy Channel Modeling._ The waveform is passed through a fading
-% channel and noise (AWGN) is added.
-%
-% * _Perform Synchronization and OFDM Demodulation._ The received symbols
-% are offset to account for a combination of implementation delay and
-% channel delay spread. The symbols are then OFDM demodulated.
-%
-% * _Perform Channel Estimation._ The channel response and noise levels are
-% estimated. These estimates are used to decode the PDSCH.
-%
-% * _Decode the PDSCH._ The recovered PDSCH symbols for all transmit and
-% receive antenna pairs, along with a noise estimate, are demodulated and
-% descrambled by <matlab:doc('ltePDSCHDecode') ltePDSCHDecode> to obtain an
-% estimate of the received codewords.
-%
-% * _Decode the Downlink Shared Channel (DL-SCH) and Store the Block CRC
-% Error for a HARQ Process._ The vector of decoded soft bits is passed to
-% <matlab:doc('lteDLSCHDecode') lteDLSCHDecode>; this decodes the codeword
-% and returns the block CRC error used to determine the throughput of the
-% system. The contents of the new soft buffer, |harqProc(harqID).decState|,
-% is available at the output of this function to be used when decoding the
-% next subframe.
-%
-% The number of transmit antennas P is obtained from the resource grid
-% dimensions. 'dims' is M-by-N-by-P where M is the number of subcarriers, N
-% is the number of symbols and P is the number of transmit antennas.
-dims = lteDLResourceGridSize(enb);
-P = dims(3);
-
-% Initialize variables used in the simulation and analysis
-% Array to store the maximum throughput for all SNR points
+% Arreglo para guardar el maximo rendimiento para cada valor de SNR 
 maxThroughput = zeros(length(SNRIn),1); 
-% Array to store the simulation throughput for all SNR points
+% Arreglo para guardar el redimiento de la simulacion para cada valor de
+% SNR
 simThroughput = zeros(length(SNRIn),1);
 
-% The temporary variables 'enb_init' and 'channel_init' are used to create
-% the temporary variables 'enb' and 'channel' within the SNR loop to create
-% independent simulation loops for the 'parfor' loop
-enb_init = enb;
-channel_init = channel;
 legendString = ['Throughput: ' char(enb.PDSCH.TxScheme)];
 allRvSeqPtrHistory = cell(1,numel(SNRIn));
-nFFT = ofdmInfo.Nfft;
+nFFT = ofdmInfo.Nfft; %Numero de puntos FTT 
 totErr=[];
 totTot=[];
 BER=[];
 
 for snrIdx = 1:numel(SNRIn)
-% To enable the use of parallel computing for increased speed comment out
-% the 'for' statement above and uncomment the 'parfor' statement below.
-% This needs the Parallel Computing Toolbox. If this is not installed
-% 'parfor' will default to the normal 'for' statement. If 'parfor' is
-% used it is recommended that the variable 'displaySimulationInformation'
-% above is set to false, otherwise the simulation information displays for
-% each SNR point will overlap.
-
-    % Set the random number generator seed depending to the loop variable
-    % to ensure independent random streams
+    % Fijamos el generador de numero aleatorios tal que dependa de la 
+    % variable del ciclo para asegurarnos flujos aleatorios independientes
     rng(snrIdx,'combRecursive');
     
     SNRdB = SNRIn(snrIdx);
-    fprintf('\nSimulating at %g dB SNR for %d Frame(s)\n' ,SNRdB, NFrames);
+    fprintf('\nSimulando en %g dB SNR para %d Frame(s)\n' ,SNRdB, NFrames);
     
-    % Initialize variables used in the simulation and analysis
-    offsets = 0;            % Initialize frame offset value
-    offset = 0;             % Initialize frame offset value for radio frame
-    blkCRC = [];            % Block CRC for all considered subframes
-    bitTput = [];           % Number of successfully received bits per subframe
-    txedTrBlkSizes = [];    % Number of transmitted bits per subframe
-    enb = enb_init;         % Initialize RMC configuration
-    channel = channel_init; % Initialize channel configuration
-    %pmiIdx = 0;             % PMI index in delay queue
-    
-    % The variable harqPtrTable stores the history of the value of the
-    % pointer to the RV sequence values for all the HARQ processes.
-    % Pre-allocate with NaNs as some subframes do not have data
+    offsets = 0;            % Inicializamos el valor del offset de la trama
+    offset = 0;             % Inicializamo el valor del offset para las 
+    % tramas de radio 
+    blkCRC = [];            % Bloque CRC para todas las subtramas consideradas
+    bitTput = [];           % Numero de bits recibidos con exito por subtrama
+    txedTrBlkSizes = [];    % Numero de bits transmitidos por subtrama
+     
+    % Guardamos la historia de los valores del apuntador a los valores de
+    % las secuencias RV para todos los procesos HARQ. Incializamos el
+    % historial con NaNs porque algunas subtramas no tienen informacion
     rvSeqPtrHistory = NaN(ncw, NFrames*10);        
     
-    % Initialize state of all HARQ processes
+    % Inicializamos todos los procesos HARQ
     harqProcesses = hNewHARQProcess(enb);
-       
-    % Initialize HARQ process IDs to 1 as the first non-zero transport
-    % block will always be transmitted using the first HARQ process. This
-    % will be updated with the full sequence output by lteRMCDLTool after
-    % the first call to the function
+    
+    
+    % Inicializamos las IDs de los procesos HARQ a 1 ya que el primer bloque 
+    % de transporte distinto de cero siempre sera transmitido usando el
+    % primer proceso HARQ
     harqProcessSequence = 1;
 
     for subframeNo = 0:(NFrames*10-1)
         
-        % Update subframe number
+        % Actualizamos el numero de subtrama
         enb.NSubframe = subframeNo;
 
-        % Get HARQ process ID for the subframe from HARQ process sequence
+        % Obtenemos el ID del proceso HARQ para la subtrama de la secuencia
+        % del proceso HARQ
         harqID = harqProcessSequence(mod(subframeNo, length(harqProcessSequence))+1);
                 
-        % If there is a transport block scheduled in the current subframe
-        % (indicated by non-zero 'harqID'), perform transmission and
-        % reception. Otherwise continue to the next subframe
+        % Si hay un bloque de transporte no vacio en la subtrama actual
+        % se realiza la transmision y recepcion
         if harqID == 0
             continue;
         end
         
-        % Update current HARQ process
+        % Actualizacion del proceso HARQ actual
         harqProcesses(harqID) = hHARQScheduling( ...
             harqProcesses(harqID), subframeNo, rvSequence);
 
-        % Extract the current subframe transport block size(s)
+        % Extraemos el tamano del bloque de transporte
         trBlk = trBlkSizes(:, mod(subframeNo, 10)+1).';
 
-        % Display run time information
+        % Desplegamos la informacion de la simulacion en proceso
         if displaySimulationInformation
             disp(' ');
             disp(['Subframe: ' num2str(subframeNo)...
                             '. HARQ process ID: ' num2str(harqID)]);
         end
         
-        % Update RV sequence pointer table
+        % Actualizamos el apuntador de la tabla de la secuencia RV
         rvSeqPtrHistory(:,subframeNo+1) = ...
                                harqProcesses(harqID).txConfig.RVIdx.';
-
-        % Update the PDSCH transmission config with HARQ process state
+        % Actualizamos la configuracion de la transmision PDSCH con el
+        % estado del proceso HARQ
         enb.PDSCH = harqProcesses(harqID).txConfig;      
         data = harqProcesses(harqID).data;
 
-        % Create transmit waveform and get the HARQ scheduling ID sequence
-        % from 'enbOut' structure output which also contains the waveform
-        % configuration and OFDM modulation parameters
+        % Creamos una forma de onda de transmision y obtenemos el ID de la
+        % secuencua de programacion HARQ de la estructura de salida 'enbOut' 
+        % que tambien contiene la configuracion de la forma de onda y los 
+        % parametros de la modulacion OFDM
+
         [txWaveform,~,enbOut] = lteRMCDLTool(enb, data);
-        
-        % Add 25 sample padding. This is to cover the range of delays
-        % expected from channel modeling (a combination of
-        % implementation delay and channel delay spread)
+        % Agregamos 25 rellenos de muestra. Esto para cubrir el rango de
+        % retardos esperados del modelado del canal
         txWaveform =  [txWaveform; zeros(25, P)]; 
         
-        % Get the HARQ ID sequence from 'enbOut' for HARQ processing
+        % Obtenemos el ID de la secuencia HARQ de 'enbOut' para el
+        % procesamiento HARQ
         harqProcessSequence = enbOut.PDSCH.HARQProcessSequence;
 
-        % Initialize channel time for each subframe
+        % Inicializamos el tiempo de canal para cada subtrama
         channel.InitTime = subframeNo/1000;
 
-        % Pass data through channel model
+        % Pasamos informacion a traves de modelo del canal
         rxWaveform = lteFadingChannel(channel, txWaveform);
 
-        % Calculate noise gain including compensation for downlink power
-        % allocation
+        % Calculamos la ganancia del ruido incluyendo la compensacion para
+        % por la asignacion de potencia del enlace descendente
         SNR = 10^((SNRdB-enb.PDSCH.Rho)/20);
 
-        % Normalize noise power to take account of sampling rate, which is
-        % a function of the IFFT size used in OFDM modulation, and the 
-        % number of antennas
+        % Normalizamos la potencia del ruido para tomar en cuenta la tasa
+        % de muestreo, la cual es una funcion de el tamano de IFFT usado en
+        % la modulacion OFDM, y el numero de antenas
         N0 = 1/(sqrt(2.0*enb.CellRefP*double(nFFT))*SNR);
 
-        % Create additive white Gaussian noise
+        % Creamos AWGN
         noise = N0*complex(randn(size(rxWaveform)), ...
                             randn(size(rxWaveform)));
 
-        % Add AWGN to the received time domain waveform        
+        % Agregamos AWGN a la onda recibida                      
         rxWaveform = rxWaveform + noise;
-
-        % Once every frame, on subframe 0, calculate a new synchronization
-        % offset
+        
+        % Calculamos un nuevo valor del offset para una nueva trama
         if (mod(subframeNo,10) == 0)
             offset = lteDLFrameOffset(enb, rxWaveform);
             if (offset > 25)
@@ -317,43 +212,34 @@ for snrIdx = 1:numel(SNRIn)
             offsets = [offsets offset]; %#ok
         end
         
-        % Synchronize the received waveform
+        %Sincronizamos la onda recibida
         rxWaveform = rxWaveform(1+offset:end, :);
 
-        % Perform OFDM demodulation on the received data to recreate the
-        % resource grid
+        % Demodulacion OFDM en la informacion recibida para recrear la
+        % malla fuente
         rxSubframe = lteOFDMDemodulate(enb, rxWaveform);
 
-        % Channel estimation
-        if(perfectChanEstimator) 
-            estChannelGrid = lteDLPerfectChannelEstimate(enb, channel, offset); %#ok
-            noiseGrid = lteOFDMDemodulate(enb, noise(1+offset:end ,:));
-            noiseEst = var(noiseGrid(:));
-        else
-            [estChannelGrid, noiseEst] = lteDLChannelEstimate( ...
+        % Estimacion del canal
+        [estChannelGrid, noiseEst] = lteDLChannelEstimate( ...
                 enb, enb.PDSCH, cec, rxSubframe);
-        end
 
-        % Get PDSCH indices
+        % Obtenemos los indices PDSCH
         pdschIndices = ltePDSCHIndices(enb, enb.PDSCH, enb.PDSCH.PRBSet);
 
-        % Get PDSCH resource elements from the received subframe. Scale the
-        % received subframe by the PDSCH power factor Rho. The PDSCH is
-        % scaled by this amount, while the cell reference symbols used for
-        % channel estimation (used in the PDSCH decoding stage) are not.
+        % Obtenemos los elementos fuente del PDSCH de la subtrama recibida
         [pdschRx, pdschHest] = lteExtractResources(pdschIndices, ...
             rxSubframe*(10^(-enb.PDSCH.Rho/20)), estChannelGrid);
 
-        % Decode PDSCH
+        % Decodificamos el PDSCH
         dlschBits = ltePDSCHDecode(...
                              enb, enb.PDSCH, pdschRx, pdschHest, noiseEst);
 
-        % Decode the DL-SCH
+        % Decodificamos el DL-SCH
         [decbits, harqProcesses(harqID).blkerr,harqProcesses(harqID).decState] = ...
             lteDLSCHDecode(enb, enb.PDSCH, trBlk, dlschBits, ...
                            harqProcesses(harqID).decState);
 
-        % Display block errors
+        % Desplegamos los errores de bloque
         if displaySimulationInformation
             if any(harqProcesses(harqID).blkerr)
                 disp(['Block error. RV index: ' num2str(harqProcesses(harqID).txConfig.RVIdx)...
@@ -364,8 +250,8 @@ for snrIdx = 1:numel(SNRIn)
             end
         end
 
-        % Store values to calculate throughput
-        % Only for subframes with data
+        % Guardamos los valores para calcular el rendimiento
+        % Solo tramas no vacias
         if any(trBlk)
             blkCRC = [blkCRC harqProcesses(harqID).blkerr]; 
             bitTput = [bitTput trBlk.*(1- ...
@@ -375,11 +261,11 @@ for snrIdx = 1:numel(SNRIn)
 
     end
     
-    % Calculate maximum and simulated throughput
-    maxThroughput(snrIdx) = sum(txedTrBlkSizes); % Max possible throughput
-    simThroughput(snrIdx) = sum(bitTput,2);      % Simulated throughput
+    % Calculamos el rendimiento maximo y el simulado 
+    maxThroughput(snrIdx) = sum(txedTrBlkSizes); % Rendimiento maximo posible
+    simThroughput(snrIdx) = sum(bitTput,2);      % Rendimiento simulado
     
-    % Display the results dynamically in the command window
+    % Desplegamos los resultados
     fprintf([['\nThroughput(Mbps) for ', num2str(NFrames) ' Frame(s) '],...
         '= %.4f\n'], 1e-6*simThroughput(snrIdx)/(NFrames*10e-3));
     fprintf(['Throughput(%%) for ', num2str(NFrames) ' Frame(s) = %.4f\n'],...
@@ -390,26 +276,20 @@ for snrIdx = 1:numel(SNRIn)
     totErr= [totErr sum(txedTrBlkSizes)-sum(bitTput)];
 end
 BER= totErr./totTot;
-%% Throughput Results
-% The throughput results for the simulation are displayed in the MATLAB(R)
-% command window after each SNR point is completed. They are also captured
-% in |simThroughput| and |maxThroughput|. |simThroughput| is an array with
-% the measured throughput in number of bits for all simulated SNR points.
-% |maxThroughput| stores the maximum possible throughput in number of bits
-% for each simulated SNR point.
 
-% Plot throughput
-figure 
-plot(SNRIn, 1e-6*simThroughput/(NFrames*10e-3),'*-.');
+%% Resultados
+% Grafica throughput
+figure
+plot(SNRIn, simThroughput*100./maxThroughput,'*-.')
+%plot(SNRIn, 1e-6*simThroughput/(NFrames*10e-3),'*-.');
 xlabel('SNR (dB)');
 ylabel('Throughput (Mbps)');
 legend(legendString,'Location','NorthWest');
 grid on;
 
-%Plot BER
+% Grafica BER
 figure 
-plot(SNRIn, BER,'*-.');
+plot(SNRIn, BER);
 xlabel('SNR (dB)');
 ylabel('BER');
-legend(legendString,'Location','NorthWest');
 grid on;
