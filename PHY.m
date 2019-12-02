@@ -1,3 +1,4 @@
+function [SNRIn, BER,trgh]=PHY(modulacion, nFr, espSnr,dispS)
 %% PDSCH (Physical Downlink Shared Channel) modo TM1
 % Utilizaremos la paqueteria LTEToolBox y funciones del ejemplo de Matlab 
 % 'lte/PDSCHThroughputConformanceExample'
@@ -12,8 +13,8 @@
 % decodificador del canal.
 
 %% Transmisor
-NFrames = 2;%Numero de tramas generadas
-SNRIn = [8:13];% rango del SNR en dB
+NFrames = nFr;%Numero de tramas generadas
+SNRIn = [0:espSnr:20];% rango del SNR en dB
 
 % Por simplicidad se utilizó un ancho de bando de 50 bloques fuente (9MHz)
 % con asignacion completa y una tasa de codigo de 0.5.
@@ -32,7 +33,7 @@ simulationParameters.PDSCH.DCIFormat = 'Format1'; %Se llena aunque no se
 %utilice para poder correr la simulacion
 simulationParameters.CellRefP = 1; %numero de puertos de antena de señal
 %específicos de celda
-simulationParameters.PDSCH.Modulation = {'16QAM'};
+simulationParameters.PDSCH.Modulation = {modulacion};
 simulationParameters.TotSubframes = 1; % Generar una subtrama a la vez
 simulationParameters.PDSCH.CSI = 'On'; % Los bits suaves son pesados por 
 % el CSI (Channel Status Information) 
@@ -84,7 +85,7 @@ cec.InterpWindow = 'Centered';      % Tipo de ventana de interpolacion
 cec.InterpWinSize = 1;              % Tamaño de la ventana de interpolacion
 %Lo anterior se configura para reducir el efecto del ruido
 %Para poder desplegar informacion de la transmision durante la simulacion
-displaySimulationInformation = true;
+displaySimulationInformation = dispS;
 %% Ciclo de procesamiento
 % Para obtener el rendimiento y la Pb en cada valor de SNR, la informacion
 % del PDSCH es analizada subtrama por subtrama 
@@ -96,6 +97,7 @@ maxThroughput = zeros(length(SNRIn),1);
 simThroughput = zeros(length(SNRIn),1);
 
 legendString = ['Throughput: ' char(enb.PDSCH.TxScheme)];
+legendStringBer= [modulacion];
 allRvSeqPtrHistory = cell(1,numel(SNRIn));
 nFFT = ofdmInfo.Nfft; %Numero de puntos FTT 
 totErr=[];
@@ -176,7 +178,7 @@ for snrIdx = 1:numel(SNRIn)
         [txWaveform,~,enbOut] = lteRMCDLTool(enb, data);
         % Agregamos 25 rellenos de muestra. Esto para cubrir el rango de
         % retardos esperados del modelado del canal
-        txWaveform =  [txWaveform; zeros(25, P)]; 
+        txWaveform =  [txWaveform; zeros(25, 1)]; 
         
         % Obtenemos el ID de la secuencia HARQ de 'enbOut' para el
         % procesamiento HARQ
@@ -277,20 +279,10 @@ for snrIdx = 1:numel(SNRIn)
     totErr= [totErr sum(txedTrBlkSizes)-sum(bitTput)];
 end
 BER= totErr./totTot;
-
+trgh=simThroughput*100./maxThroughput;
 %% Resultados
 % Grafica throughput
-figure
-plot(SNRIn, simThroughput*100./maxThroughput,'*-.')
-%plot(SNRIn, 1e-6*simThroughput/(NFrames*10e-3),'*-.');
-xlabel('SNR (dB)');
-ylabel('Throughput (Mbps)');
-legend(legendString,'Location','NorthWest');
-grid on;
 
 % Grafica BER
-figure 
-plot(SNRIn, BER);
-xlabel('SNR (dB)');
-ylabel('BER');
-grid on;
+%figure(2)
+end 
