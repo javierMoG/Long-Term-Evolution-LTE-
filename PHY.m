@@ -103,7 +103,7 @@ nFFT = ofdmInfo.Nfft; %Numero de puntos FTT
 totErr=[];
 totTot=[];
 BER=[];
-
+trgh=[];
 for snrIdx = 1:numel(SNRIn)
     % Fijamos el generador de numero aleatorios tal que dependa de la 
     % variable del ciclo para asegurarnos flujos aleatorios independientes
@@ -277,9 +277,10 @@ for snrIdx = 1:numel(SNRIn)
     allRvSeqPtrHistory{snrIdx} = rvSeqPtrHistory;
     totTot= [totTot sum(txedTrBlkSizes)];
     totErr= [totErr sum(txedTrBlkSizes)-sum(bitTput)];
+    trgh=[trgh 1e-6*simThroughput(snrIdx)*100/(NFrames*10e-3)];
 end
-BER= totErr./totTot;
-trgh=simThroughput*100./maxThroughput;
+BER= (totErr./totTot);
+
 %% Resultados
 % Grafica throughput
 
