@@ -1,5 +1,5 @@
 %Parámetros de simulación
-nFr=300;
+nFr=20;
 espSnr=.5;
 modulacion=["16QAM";"64QAM";"QPSK"];
 SNRIn=[];
