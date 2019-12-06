@@ -14,7 +14,7 @@ function [SNRIn, BER,trgh]=PHY(modulacion, nFr, espSnr,dispS)
 
 %% Transmisor
 NFrames = nFr;%Numero de tramas generadas
-SNRIn = [0:espSnr:20];% rango del SNR en dB
+SNRIn = [0:espSnr:18];% rango del SNR en dB
 
 % Por simplicidad se utilizó un ancho de bando de 50 bloques fuente (9MHz)
 % con asignacion completa y una tasa de codigo de 0.5.
