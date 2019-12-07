@@ -277,7 +277,7 @@ for snrIdx = 1:numel(SNRIn)
     allRvSeqPtrHistory{snrIdx} = rvSeqPtrHistory;
     totTot= [totTot sum(txedTrBlkSizes)];
     totErr= [totErr sum(txedTrBlkSizes)-sum(bitTput)];
-    trgh=[trgh 1e-6*simThroughput(snrIdx)*100/(NFrames*10e-3)];
+    trgh=[trgh simThroughput(snrIdx)*100/maxThroughput(snrIdx)];
 end
 BER= (totErr./totTot);
 

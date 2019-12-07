@@ -1,7 +1,7 @@
 %Parámetros de simulación
 tic
 %Número de frames simulados
-nFr=100;
+nFr=10;
 %Espaciación entre valores del SNR
 espSnr=.5;
 %Modulaciones a simular

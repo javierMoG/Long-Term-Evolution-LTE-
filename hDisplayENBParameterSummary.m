@@ -1,20 +1,19 @@
-% hDisplayENBParameterSummary Print enb parameter summary 
-%   hDisplayENBParameterSummary(ENB) prints a summary of some of the more
-%   relevant simulation parameters based on the ENB structure.
+% hDisplayENBParameterSummary Imrpime el resumen de los parámetros 
+%   hDisplayENBParameterSummary(ENB) muestra un resumen de los 
+%	parámetros de la simulación con base en ENB
 
 %   Copyright 2016 The MathWorks, Inc.
 
 function hDisplayENBParameterSummary(enb, txMode)
 
-% Number of codewords
+% Número de codewords
 ncw = length(enb.PDSCH.Modulation);
 
-% Number of transmit antennas, get them from the waveform size. We do not
-% use the generated waveform here, only needed to calculate ntxants
+%Número de antenas transmisoras
 [wave, ~] = lteRMCDLTool(enb,[]);
 ntxants = size(wave,2);
 
-% Print summary
+% Imprime resumen
 fprintf('\n-- Parameter summary: --------------------------------------------\n');
 disp(['                      Duplexing mode: ' enb.DuplexMode]);
 disp(['                   Transmission mode: ' txMode]);
